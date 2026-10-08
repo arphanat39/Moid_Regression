@@ -1,122 +1,125 @@
+import inspect
 import os
-import random
 import base64
 from pathlib import Path
 
-import joblib
 import gradio as gr
+import joblib
+import numpy as np
 
 
 # ============================================================
-# SETTINGS
+# PATHS
 # ============================================================
 
-MODEL_PATH = "model/moid_model.joblib"
-BACKGROUND_PATH = Path("assets/background.png")
+BASE_DIR = Path(__file__).resolve().parent
 
-AU_TO_KM = 149_597_870.7
+MODEL_PATH = BASE_DIR / "model" / "moid_model.joblib"
+
+BACKGROUND_PATH = BASE_DIR / "assets" / "background.png"
+HEADER_PATH = BASE_DIR / "assets" / "header.png"
+
+# NEW SECTION IMAGES
+CHARACTERISTICS_PATH = BASE_DIR / "assets" / "asteroid-characteristics.png"
+RESULT_PATH = BASE_DIR / "assets" / "prediction-result.png"
 
 
 # ============================================================
 # LOAD MODEL
 # ============================================================
 
-if not os.path.exists(MODEL_PATH):
-    raise FileNotFoundError(
-        "Model not found:\n"
-        "model/moid_model.joblib\n\n"
-        "Please run train.py first."
-    )
-
 model = joblib.load(MODEL_PATH)
 
 
 # ============================================================
-# LOAD BACKGROUND IMAGE
+# IMAGE → BASE64
 # ============================================================
 
-if not BACKGROUND_PATH.exists():
-    raise FileNotFoundError(
-        f"Background image not found:\n{BACKGROUND_PATH}\n\n"
-        "Make sure background.png is inside the assets folder."
-    )
+def image_to_base64(path):
+
+    if not path.exists():
+        raise FileNotFoundError(f"Image not found: {path}")
+
+    with open(path, "rb") as f:
+        encoded = base64.b64encode(f.read()).decode("utf-8")
+
+    suffix = path.suffix.lower()
+
+    if suffix == ".png":
+        mime = "image/png"
+    elif suffix in [".jpg", ".jpeg"]:
+        mime = "image/jpeg"
+    elif suffix == ".webp":
+        mime = "image/webp"
+    else:
+        mime = "image/png"
+
+    return f"data:{mime};base64,{encoded}"
 
 
-# Detect image type
-extension = BACKGROUND_PATH.suffix.lower()
+BACKGROUND_DATA = image_to_base64(BACKGROUND_PATH)
+HEADER_DATA = image_to_base64(HEADER_PATH)
 
-if extension in [".jpg", ".jpeg"]:
-    mime_type = "image/jpeg"
-elif extension == ".webp":
-    mime_type = "image/webp"
-else:
-    mime_type = "image/png"
+CHARACTERISTICS_DATA = image_to_base64(CHARACTERISTICS_PATH)
+RESULT_DATA = image_to_base64(RESULT_PATH)
 
 
-# Convert image to Base64
-with open(BACKGROUND_PATH, "rb") as f:
-    image_base64 = base64.b64encode(
-        f.read()
-    ).decode("utf-8")
+# ============================================================
+# BACKGROUND
+# ============================================================
 
-
-BACKGROUND_DATA = (
-    f"data:{mime_type};base64,{image_base64}"
-)
+BACKGROUND_HTML = f"""
+<div id="background-layer">
+    <img src="{BACKGROUND_DATA}" alt="">
+</div>
+"""
 
 
 # ============================================================
 # RANDOM VALUES
 # ============================================================
 
-def generate_random_values():
+def random_values():
 
-    H = round(
-        random.uniform(12, 26),
-        3
-    )
+    # --------------------------------------------------------
+    # Plausible asteroid orbital values
+    # --------------------------------------------------------
+    #
+    # H      : Absolute magnitude
+    # i      : Inclination (degrees)
+    # albedo : Surface reflectivity
+    # e      : Orbital eccentricity
+    # a      : Semi-major axis (AU)
+    # om     : Longitude of ascending node (degrees)
+    # w      : Argument of perihelion (degrees)
+    # ma     : Mean anomaly (degrees)
+    #
+    # Values are randomly generated every time the button
+    # is pressed.
+    # --------------------------------------------------------
 
-    albedo = round(
-        random.uniform(0.03, 0.40),
-        4
-    )
+    H = round(np.random.uniform(14.0, 24.0), 2)
 
-    e = round(
-        random.uniform(0.01, 0.70),
-        5
-    )
+    i = round(np.random.uniform(0.0, 30.0), 2)
 
-    a = round(
-        random.uniform(0.70, 4.50),
-        5
-    )
+    albedo = round(np.random.uniform(0.03, 0.45), 3)
 
-    i = round(
-        random.uniform(0, 35),
-        3
-    )
+    e = round(np.random.uniform(0.02, 0.65), 3)
 
-    om = round(
-        random.uniform(0, 360),
-        3
-    )
+    a = round(np.random.uniform(0.85, 3.20), 3)
 
-    w = round(
-        random.uniform(0, 360),
-        3
-    )
+    om = round(np.random.uniform(0.0, 360.0), 2)
 
-    ma = round(
-        random.uniform(0, 360),
-        3
-    )
+    w = round(np.random.uniform(0.0, 360.0), 2)
+
+    ma = round(np.random.uniform(0.0, 360.0), 2)
 
     return (
         H,
+        i,
         albedo,
         e,
         a,
-        i,
         om,
         w,
         ma
@@ -127,137 +130,106 @@ def generate_random_values():
 # PREDICTION
 # ============================================================
 
-def predict_moid(
-    H,
-    albedo,
-    e,
-    a,
-    i,
-    om,
-    w,
-    ma
-):
+def predict_moid(H, i, albedo, e, a, om, w, ma):
 
-    values = [
-        H,
-        albedo,
-        e,
-        a,
-        i,
-        om,
-        w,
-        ma
-    ]
-
-    # Check missing values
-    if any(
-        value is None
-        for value in values
-    ):
-        return (
-            "Please enter all 8 asteroid characteristics.",
-            ""
-        )
-
-    # Convert to numbers
     try:
 
-        values = [
-            float(value)
-            for value in values
-        ]
-
-    except (ValueError, TypeError):
-
-        return (
-            "Please enter valid numeric values.",
-            ""
+        values = np.array(
+            [[
+                float(H),
+                float(albedo),
+                float(e),
+                float(a),
+                float(i),
+                float(om),
+                float(w),
+                float(ma),
+            ]],
+            dtype=float
         )
 
-    # Predict
-    prediction = model.predict(
-        [values]
-    )[0]
+        prediction = float(model.predict(values)[0])
 
-    prediction = max(
-        float(prediction),
-        0.0
-    )
+        prediction = max(0.0, prediction)
 
-    # AU -> km
-    kilometers = (
-        prediction *
-        AU_TO_KM
-    )
+        # 1 AU = 149,597,870.7 km
+        km = prediction * 149_597_870.7
 
-    return (
-        f"{prediction:.8f} AU",
-        f"{kilometers:,.2f} km"
-    )
+        return (
+            f"{prediction:.6f} AU",
+            f"{km:,.2f} km"
+        )
 
+    except Exception as error:
 
-# ============================================================
-# BACKGROUND HTML
-# ============================================================
-
-BACKGROUND_HTML = f"""
-<div id="background-layer">
-
-    <img
-        src="{BACKGROUND_DATA}"
-        alt=""
-    >
-
-</div>
-"""
+        return (
+            f"Error: {error}",
+            "Please check your input values."
+        )
 
 
 # ============================================================
 # CSS
 # ============================================================
 
-CSS = """
+CSS = r"""
 
 /* ============================================================
-   GLOBAL PAGE
+   FONT
    ============================================================ */
 
-html,
-body {
+@import url("https://cdn.jsdelivr.net/npm/@fontsource-variable/geist-pixel@5.3.1/index.css");
 
-    margin: 0 !important;
 
-    padding: 0 !important;
+/* ============================================================
+   REMOVE SCROLLBARS
+   ============================================================ */
 
-    min-height: 100% !important;
+* {
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+}
 
+*::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
     background: transparent !important;
-
-    font-family:
-        'Oswald',
-        sans-serif !important;
 }
 
 
 /* ============================================================
-   FIXED BACKGROUND IMAGE
+   GLOBAL
+   ============================================================ */
+
+html,
+body {
+    margin: 0 !important;
+    padding: 0 !important;
+    min-height: 100% !important;
+    background: transparent !important;
+
+    scrollbar-width: none !important;
+    -ms-overflow-style: none !important;
+}
+
+body {
+    overflow-x: hidden !important;
+}
+
+
+/* ============================================================
+   BACKGROUND
    ============================================================ */
 
 #background-layer {
-
     position: fixed !important;
 
     top: 0 !important;
-
     left: 0 !important;
 
-    width: 100vw !important;
-
+    width: 100% !important;
     height: 100vh !important;
-
-    margin: 0 !important;
-
-    padding: 0 !important;
 
     overflow: hidden !important;
 
@@ -266,29 +238,39 @@ body {
     pointer-events: none !important;
 }
 
-
 #background-layer img {
-
     display: block !important;
 
-    width: 100vw !important;
-
+    width: 100% !important;
     height: 100vh !important;
-
-    object-fit: cover !important;
-
-    object-position: center center !important;
 
     max-width: none !important;
 
+    object-fit: cover !important;
+    object-position: center center !important;
 }
 
 
 /* ============================================================
-   GRADIO CONTAINER
+   MAIN GRADIO CONTAINER
    ============================================================ */
 
 .gradio-container {
+
+    --pixel-glow:
+        0 0 0 4px rgba(165, 249, 255, 0.95),
+        0 0 0 8px rgba(165, 249, 255, 0.55),
+        0 0 0 12px rgba(165, 249, 255, 0.25);
+
+    --pixel-glow-hover:
+        0 0 0 4px rgba(165, 249, 255, 1),
+        0 0 0 8px rgba(165, 249, 255, 0.70),
+        0 0 0 12px rgba(165, 249, 255, 0.40),
+        0 0 0 16px rgba(165, 249, 255, 0.18);
+
+    --pixel-glow-active:
+        0 0 0 4px rgba(165, 249, 255, 0.95),
+        0 0 0 8px rgba(165, 249, 255, 0.40);
 
     position: relative !important;
 
@@ -300,40 +282,51 @@ body {
 
     margin: 0 auto !important;
 
+    padding-left: 20px !important;
+    padding-right: 20px !important;
+
     background: transparent !important;
-
     background-color: transparent !important;
+
+    font-family:
+        "Geist Pixel Variable",
+        "Courier New",
+        monospace !important;
+
+    overflow-x: hidden !important;
 }
 
 
 /* ============================================================
-   REMOVE DEFAULT GRADIO BACKGROUNDS
+   REMOVE LIGHT BLUE / GREY GRADIO WRAPPERS
    ============================================================ */
 
-.gradio-container .contain,
+.gradio-container .column,
 .gradio-container .form,
-.gradio-container .block,
-.gradio-container .panel,
-.gradio-container .wrap {
+.gradio-container .styler,
+.gradio-container .gap,
+.gradio-container .stretch,
+.gradio-container .row:not(.button-box):not(.result-box) {
 
+    background: transparent !important;
     background-color: transparent !important;
+
+    border: none !important;
+
+    box-shadow: none !important;
 }
 
 
 /* ============================================================
-   ALL TEXT
+   GENERIC BLOCKS
    ============================================================ */
 
-.gradio-container,
-.gradio-container *,
-.gradio-container label,
-.gradio-container p,
-.gradio-container h1,
-.gradio-container h2,
-.gradio-container h3,
-.gradio-container span {
+.gradio-container .block {
 
-    color: #000000 !important;
+    font-family:
+        "Geist Pixel Variable",
+        "Courier New",
+        monospace !important;
 }
 
 
@@ -341,201 +334,277 @@ body {
    HEADER
    ============================================================ */
 
-.hero {
+.header-box {
 
-    text-align: center !important;
+    width: 100% !important;
 
-    margin-top: 30px !important;
+    display: flex !important;
 
-    margin-bottom: 25px !important;
+    justify-content: center !important;
+    align-items: center !important;
 
-    padding: 32px !important;
+    background: transparent !important;
 
-    background:
-        rgba(255, 255, 255, 0.93) !important;
+    border: none !important;
 
-    border:
-        2px solid #000000 !important;
+    box-shadow: none !important;
 
-    border-radius:
-        8px !important;
+    padding: 25px 0 20px 0 !important;
 
-    box-shadow:
-
-        0 0 8px #a5f9ff,
-
-        0 0 18px #a5f9ff !important;
+    margin: 0 !important;
 }
 
-
-/* ============================================================
-   HEADER TITLE
-   ============================================================ */
-
-.hero-title {
-
-    font-family:
-        'Oswald',
-        sans-serif !important;
-
-    font-size:
-        46px !important;
-
-    font-weight:
-        600 !important;
-
-    line-height:
-        1.1 !important;
-
-    margin:
-        0 0 12px 0 !important;
-
-    color:
-        #000000 !important;
-
-    text-shadow:
-        2px 2px 0 #a5f9ff !important;
-}
-
-
-/* ============================================================
-   HEADER DESCRIPTION
-   ============================================================ */
-
-.hero-subtitle {
-
-    font-family:
-        'Oswald',
-        sans-serif !important;
-
-    font-size:
-        18px !important;
-
-    line-height:
-        1.5 !important;
-
-    max-width:
-        800px !important;
-
-    margin:
-        0 auto !important;
-
-    color:
-        #000000 !important;
-}
-
-
-/* ============================================================
-   SECTION TITLE
-   ============================================================ */
-
-.section-title {
+.header-box img {
 
     display: block !important;
 
-    font-size:
-        27px !important;
+    width: 100% !important;
 
-    font-weight:
-        600 !important;
+    max-width: 1100px !important;
 
-    color:
-        #000000 !important;
+    height: auto !important;
 
-    background:
-        #ffffff !important;
+    object-fit: contain !important;
 
-    border:
-        2px solid #000000 !important;
+    background: transparent !important;
 
-    border-radius:
-        6px !important;
+    border: none !important;
 
-    padding:
-        8px 15px !important;
-
-    margin-top:
-        25px !important;
-
-    margin-bottom:
-        15px !important;
-
-    box-shadow:
-        0 0 7px #a5f9ff !important;
+    box-shadow: none !important;
 }
 
 
 /* ============================================================
-   INPUT BOXES
+   SECTION IMAGE
+   ============================================================ */
+
+.section-image {
+
+    width: calc(100% - 28px) !important;
+
+    margin: 16px 14px 26px 14px !important;
+
+    padding: 0 !important;
+
+    background: transparent !important;
+
+    border: none !important;
+
+    box-shadow: none !important;
+
+    overflow: hidden !important;
+}
+
+.section-image img {
+
+    display: block !important;
+
+    width: 100% !important;
+
+    height: auto !important;
+
+    max-width: 1100px !important;
+
+    margin: 0 auto !important;
+
+    object-fit: contain !important;
+
+    background: transparent !important;
+
+    border: none !important;
+
+    box-shadow: none !important;
+}
+
+
+/* ============================================================
+   INPUT AREA
+   ============================================================ */
+
+.input-grid {
+
+    width: 100% !important;
+
+    display: grid !important;
+
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+
+    gap: 0 !important;
+
+    margin: 0 !important;
+
+    padding: 0 !important;
+
+    overflow: visible !important;
+}
+
+
+/* ============================================================
+   INPUT COLUMNS
+   ============================================================ */
+
+.input-column {
+
+    min-width: 0 !important;
+
+    width: 100% !important;
+
+    overflow: visible !important;
+
+    display: flex !important;
+
+    flex-direction: column !important;
+
+    background: transparent !important;
+
+    border: none !important;
+
+    box-shadow: none !important;
+}
+
+
+/* ============================================================
+   INPUT CARDS
    ============================================================ */
 
 .input-box {
 
-    background:
-        #ffffff !important;
+    width: calc(100% - 28px) !important;
 
-    border:
-        2px solid #000000 !important;
+    min-width: 0 !important;
 
-    border-radius:
-        6px !important;
+    box-sizing: border-box !important;
 
-    box-shadow:
-        0 0 6px #a5f9ff !important;
+    background: #ffffff !important;
+
+    border: 3px solid #000000 !important;
+
+    border-radius: 0 !important;
+
+    box-shadow: var(--pixel-glow) !important;
+
+    padding: 22px !important;
+
+    margin: 6px 14px 22px 14px !important;
+
+    overflow: visible !important;
 }
 
 
 /* ============================================================
-   INPUT LABEL
+   VARIABLE NAME LABELS
    ============================================================ */
 
-label {
+.gradio-container .input-box label,
+.gradio-container .input-box label > span:not([class*="info"]),
+.gradio-container .input-box span[data-testid="block-info"],
+.gradio-container .input-box [data-testid="block-info"] {
 
-    color:
-        #000000 !important;
-
-    font-weight:
-        600 !important;
-}
-
-
-/* ============================================================
-   INPUT FIELDS
-   ============================================================ */
-
-input,
-textarea {
-
-    background:
-        #ffffff !important;
-
-    color:
-        #000000 !important;
-
-    border-color:
-        #000000 !important;
+    color: #000000 !important;
 
     font-family:
-        'Oswald',
-        sans-serif !important;
+        "Geist Pixel Variable",
+        "Courier New",
+        monospace !important;
+
+    font-size: 36px !important;
+
+    font-weight: 700 !important;
+
+    line-height: 1.2 !important;
 }
 
 
 /* ============================================================
-   INPUT DESCRIPTION
+   INPUT FIELD
    ============================================================ */
 
-small {
+.input-box input {
 
-    color:
-        #000000 !important;
+    width: 100% !important;
+
+    box-sizing: border-box !important;
+
+    color: #000000 !important;
+
+    background: #ffffff !important;
+
+    border: 3px solid #000000 !important;
+
+    border-radius: 0 !important;
 
     font-family:
-        'Oswald',
+        "Geist Pixel Variable",
+        "Courier New",
+        monospace !important;
+
+    font-size: 22px !important;
+
+    min-height: 52px !important;
+}
+
+
+/* ============================================================
+   EXPLANATION TEXT
+   ============================================================ */
+
+.input-box small,
+.input-box .info,
+.input-box [class*="info"],
+.input-box .description,
+.input-box .wrap > small,
+.gradio-container .input-box label .info,
+.gradio-container .input-box label div[class*="info"],
+.gradio-container .input-box label small {
+
+    font-family:
+        Arial,
+        Helvetica,
         sans-serif !important;
 
-    line-height:
-        1.4 !important;
+    font-size: 14px !important;
+
+    line-height: 1.45 !important;
+
+    font-weight: 400 !important;
+
+    color: #000000 !important;
+}
+
+
+/* ============================================================
+   ONE BOX FOR BOTH BUTTONS
+   ============================================================ */
+
+.gradio-container .row\.button-box,
+.button-box {
+
+    width: auto !important;
+
+    display: flex !important;
+
+    flex-direction: row !important;
+
+    justify-content: center !important;
+
+    align-items: stretch !important;
+
+    gap: 16px !important;
+
+    box-sizing: border-box !important;
+
+    background: #060b14 !important;
+    background-color: #060b14 !important;
+
+    border: 3px solid #000000 !important;
+
+    border-radius: 0 !important;
+
+    box-shadow: var(--pixel-glow) !important;
+
+    padding: 18px !important;
+
+    margin: 14px 14px 30px 14px !important;
 }
 
 
@@ -543,144 +612,194 @@ small {
    BUTTONS
    ============================================================ */
 
-.pixel-button {
+button.pixel-button {
 
-    background:
-        #ffffff !important;
+    display: flex !important;
 
-    color:
-        #000000 !important;
+    visibility: visible !important;
 
-    border:
-        2px solid #000000 !important;
+    opacity: 1 !important;
 
-    border-radius:
-        3px !important;
+    flex: 1 1 0 !important;
+
+    min-height: 64px !important;
+
+    align-items: center !important;
+
+    justify-content: center !important;
+
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+
+    color: #000000 !important;
+
+    border: 3px solid #000000 !important;
+
+    border-radius: 0 !important;
+
+    box-shadow: var(--pixel-glow) !important;
 
     font-family:
-        'Oswald',
-        sans-serif !important;
+        "Geist Pixel Variable",
+        "Courier New",
+        monospace !important;
 
-    font-weight:
-        600 !important;
+    font-size: 22px !important;
 
-    letter-spacing:
-        1px !important;
+    font-weight: 700 !important;
 
-    box-shadow:
+    cursor: pointer !important;
 
-        3px 3px 0 #000000,
-
-        0 0 8px #a5f9ff,
-
-        0 0 16px #a5f9ff !important;
-
-    transition:
-        transform 0.12s ease,
-        box-shadow 0.12s ease !important;
+    transition: none !important;
 }
 
 
 /* ============================================================
-   BUTTON HOVER
+   BUTTON TEXT
    ============================================================ */
 
-.pixel-button:hover {
+button.pixel-button span,
+button.pixel-button div,
+button.pixel-button span span {
 
-    background:
-        #ffffff !important;
+    color: #000000 !important;
 
-    color:
-        #000000 !important;
+    font-family:
+        "Geist Pixel Variable",
+        "Courier New",
+        monospace !important;
 
-    transform:
-        translate(-2px, -2px) !important;
+    font-size: 22px !important;
 
-    box-shadow:
+    font-weight: 700 !important;
 
-        5px 5px 0 #000000,
+    opacity: 1 !important;
 
-        0 0 12px #a5f9ff,
-
-        0 0 25px #a5f9ff,
-
-        0 0 40px rgba(165, 249, 255, 0.8) !important;
+    visibility: visible !important;
 }
 
 
 /* ============================================================
-   RANDOM BUTTON
+   HOVER
    ============================================================ */
 
-.random-button {
+button.pixel-button:hover {
 
-    margin-top:
-        15px !important;
+    background: #ffffff !important;
 
-    margin-bottom:
-        15px !important;
+    color: #000000 !important;
 
-    min-height:
-        48px !important;
+    box-shadow: var(--pixel-glow-hover) !important;
+
+    transform: translateY(-2px) !important;
 }
 
 
 /* ============================================================
-   PREDICT BUTTON
+   CLICK
    ============================================================ */
 
-.predict-button {
+button.pixel-button:active {
 
-    min-height:
-        60px !important;
+    transform: translateY(2px) !important;
 
-    font-size:
-        22px !important;
-
-    font-weight:
-        600 !important;
-
-    margin-top:
-        10px !important;
+    box-shadow: var(--pixel-glow-active) !important;
 }
 
 
 /* ============================================================
-   RESULT BOX
+   PREDICTION RESULT BOX
    ============================================================ */
 
+.gradio-container .row\.result-box,
 .result-box {
 
-    background:
-        #ffffff !important;
+    width: calc(100% - 28px) !important;
 
-    border:
-        2px solid #000000 !important;
+    box-sizing: border-box !important;
 
-    border-radius:
-        6px !important;
+    display: flex !important;
 
-    box-shadow:
+    flex-direction: row !important;
 
-        0 0 8px #a5f9ff,
+    gap: 16px !important;
 
-        0 0 16px rgba(165, 249, 255, 0.7) !important;
+    background: #060b14 !important;
+
+    background-color: #060b14 !important;
+
+    border: 3px solid #000000 !important;
+
+    border-radius: 0 !important;
+
+    box-shadow: var(--pixel-glow) !important;
+
+    padding: 22px !important;
+
+    margin: 6px 14px 30px 14px !important;
 }
 
 
-.result-box input {
+/* ============================================================
+   RESULT COLUMNS
+   ============================================================ */
 
-    background:
-        #ffffff !important;
+.result-box > div {
 
-    color:
-        #000000 !important;
+    min-width: 0 !important;
 
-    font-size:
-        20px !important;
+    flex: 1 1 0 !important;
+}
 
-    font-weight:
-        600 !important;
+
+/* ============================================================
+   RESULT LABELS
+   ============================================================ */
+
+.result-box label,
+.result-box label span,
+.result-box [data-testid="block-info"] {
+
+    color: #000000 !important;
+
+    font-family:
+        "Geist Pixel Variable",
+        "Courier New",
+        monospace !important;
+
+    font-size: 24px !important;
+
+    font-weight: 700 !important;
+}
+
+
+/* ============================================================
+   RESULT VALUES
+   ============================================================ */
+
+.result-box input,
+.result-box textarea {
+
+    width: 100% !important;
+
+    box-sizing: border-box !important;
+
+    color: #000000 !important;
+
+    background: #ffffff !important;
+
+    border: 3px solid #000000 !important;
+
+    border-radius: 0 !important;
+
+    font-family:
+        "Geist Pixel Variable",
+        "Courier New",
+        monospace !important;
+
+    font-size: 24px !important;
+
+    font-weight: 700 !important;
 }
 
 
@@ -690,28 +809,112 @@ small {
 
 @media (max-width: 700px) {
 
-    .hero {
+    .gradio-container {
 
-        padding:
-            25px 15px !important;
+        width: 94% !important;
+
+        padding-left: 10px !important;
+        padding-right: 10px !important;
     }
 
-    .hero-title {
 
-        font-size:
-            34px !important;
+    .header-box {
+
+        padding-top: 15px !important;
     }
 
-    .hero-subtitle {
 
-        font-size:
-            16px !important;
+    .header-box img {
+
+        width: 100% !important;
     }
 
-    .section-title {
 
-        font-size:
-            23px !important;
+    /* Keep inputs in two columns */
+    .input-grid {
+
+        grid-template-columns:
+            minmax(0, 1fr)
+            minmax(0, 1fr) !important;
+
+        gap: 0 !important;
+    }
+
+
+    .input-box {
+
+        width: calc(100% - 12px) !important;
+
+        margin-left: 6px !important;
+        margin-right: 6px !important;
+
+        padding: 12px !important;
+    }
+
+
+    .gradio-container .input-box label,
+    .gradio-container .input-box label > span:not([class*="info"]),
+    .gradio-container .input-box span[data-testid="block-info"],
+    .gradio-container .input-box [data-testid="block-info"] {
+
+        font-size: 24px !important;
+    }
+
+
+    .input-box input {
+
+        font-size: 16px !important;
+
+        min-height: 46px !important;
+    }
+
+
+    .input-box small,
+    .input-box .info,
+    .input-box [class*="info"],
+    .input-box .description {
+
+        font-size: 11px !important;
+    }
+
+
+    .button-box {
+
+        flex-direction: column !important;
+
+        gap: 12px !important;
+    }
+
+
+    button.pixel-button {
+
+        width: 100% !important;
+
+        flex: none !important;
+    }
+
+
+    .result-box {
+
+        flex-direction: column !important;
+
+        gap: 14px !important;
+    }
+
+
+    .result-box input,
+    .result-box textarea {
+
+        font-size: 18px !important;
+    }
+
+
+    .section-image {
+
+        width: calc(100% - 12px) !important;
+
+        margin-left: 6px !important;
+        margin-right: 6px !important;
     }
 }
 
@@ -719,11 +922,49 @@ small {
 
 
 # ============================================================
-# CREATE APP
+# THEME
+# ============================================================
+
+THEME = gr.themes.Base(
+    primary_hue="cyan",
+    neutral_hue="slate"
+)
+
+
+# ============================================================
+# GRADIO 5 vs GRADIO 6 COMPATIBILITY
+# ============================================================
+
+LAUNCH_ACCEPTS_STYLE = (
+    "css" in inspect.signature(gr.Blocks.launch).parameters
+)
+
+if LAUNCH_ACCEPTS_STYLE:
+
+    BLOCKS_STYLE_KWARGS = {}
+
+    LAUNCH_STYLE_KWARGS = {
+        "css": CSS,
+        "theme": THEME
+    }
+
+else:
+
+    BLOCKS_STYLE_KWARGS = {
+        "css": CSS,
+        "theme": THEME
+    }
+
+    LAUNCH_STYLE_KWARGS = {}
+
+
+# ============================================================
+# GRADIO APP
 # ============================================================
 
 with gr.Blocks(
-    title="Asteroid MOID Prediction"
+    title="Asteroid MOID Prediction",
+    **BLOCKS_STYLE_KWARGS
 ) as demo:
 
 
@@ -731,216 +972,215 @@ with gr.Blocks(
     # BACKGROUND
     # ========================================================
 
-    # This is deliberately placed BEFORE all other content.
-    # It stays behind the entire application.
-
-    gr.HTML(
-        BACKGROUND_HTML
-    )
+    gr.HTML(BACKGROUND_HTML)
 
 
     # ========================================================
-    # HEADER
+    # HEADER IMAGE
     # ========================================================
 
     gr.HTML(
-        """
-        <div class="hero">
-
-            <div class="hero-title">
-                Asteroid MOID Prediction
-            </div>
-
-            <div class="hero-subtitle">
-                Predict the Minimum Orbit Intersection Distance (MOID)
-                using physical and orbital characteristics of an asteroid.
-            </div>
-
+        f"""
+        <div class="header-box">
+            <img
+                src="{HEADER_DATA}"
+                alt="Asteroid MOID Prediction"
+            >
         </div>
         """
     )
 
 
     # ========================================================
-    # CHARACTERISTICS TITLE
+    # ASTEROID CHARACTERISTICS IMAGE
     # ========================================================
 
-    gr.Markdown(
-        "## Asteroid Characteristics",
-        elem_classes="section-title"
+    gr.HTML(
+        f"""
+        <div class="section-image">
+            <img
+                src="{CHARACTERISTICS_DATA}"
+                alt="Asteroid Characteristics"
+            >
+        </div>
+        """
     )
 
 
     # ========================================================
-    # INPUTS
+    # INPUTS — 2 COLUMNS
     # ========================================================
 
-    with gr.Row():
+    with gr.Row(elem_classes="input-grid"):
 
-
-        # ====================================================
+        # ----------------------------------------------------
         # LEFT COLUMN
-        # ====================================================
+        # ----------------------------------------------------
 
-        with gr.Column():
-
+        with gr.Column(elem_classes="input-column"):
 
             H = gr.Number(
-
-                label="Absolute Magnitude (H)",
-
+                label="H",
+                value=18.5,
                 info=(
-                    "Measures the intrinsic brightness of the asteroid. "
-                    "A lower H generally indicates a larger or more "
-                    "reflective object."
+                    "Absolute magnitude. A measure related "
+                    "to the asteroid's intrinsic brightness and size."
                 ),
-
-                value=18.0,
-
                 elem_classes="input-box"
             )
 
 
-            albedo = gr.Number(
-
-                label="Albedo",
-
+            i = gr.Number(
+                label="i",
+                value=8.0,
                 info=(
-                    "The fraction of sunlight reflected by the asteroid's "
-                    "surface. Higher albedo means more sunlight is reflected."
+                    "Inclination. The angle between the asteroid's "
+                    "orbital plane and the reference plane, "
+                    "measured in degrees."
                 ),
-
-                value=0.15,
-
                 elem_classes="input-box"
             )
 
 
             e = gr.Number(
-
-                label="Eccentricity (e)",
-
+                label="e",
+                value=0.25,
                 info=(
-                    "Describes how elliptical the asteroid's orbit is. "
-                    "A value close to 0 represents a nearly circular orbit."
+                    "Orbital eccentricity. Describes how "
+                    "elliptical the asteroid's orbit is."
                 ),
-
-                value=0.20,
-
                 elem_classes="input-box"
             )
 
 
             a = gr.Number(
-
-                label="Semi-major Axis (a)",
-
+                label="a",
+                value=1.40,
                 info=(
-                    "The semi-major axis of the asteroid's orbit, measured "
-                    "in AU. It describes the characteristic size of the "
-                    "orbital ellipse."
+                    "Semi-major axis of the asteroid's orbit, "
+                    "measured in astronomical units (AU)."
                 ),
-
-                value=1.50,
-
                 elem_classes="input-box"
             )
 
 
-        # ====================================================
+        # ----------------------------------------------------
         # RIGHT COLUMN
-        # ====================================================
+        # ----------------------------------------------------
 
-        with gr.Column():
+        with gr.Column(elem_classes="input-column"):
 
-
-            i = gr.Number(
-
-                label="Inclination (i)",
-
+            albedo = gr.Number(
+                label="Albedo",
+                value=0.15,
                 info=(
-                    "The angle between the asteroid's orbital plane and "
-                    "the reference plane, measured in degrees."
+                    "The fraction of sunlight reflected "
+                    "by the asteroid's surface."
                 ),
-
-                value=10.0,
-
                 elem_classes="input-box"
             )
 
 
             om = gr.Number(
-
-                label="Longitude of Ascending Node (Ω)",
-
-                info=(
-                    "Describes the orientation of the asteroid's orbital "
-                    "plane relative to the reference direction, measured "
-                    "in degrees."
-                ),
-
+                label="om",
                 value=120.0,
-
+                info=(
+                    "Longitude of the ascending node, "
+                    "measured in degrees."
+                ),
                 elem_classes="input-box"
             )
 
 
             w = gr.Number(
-
-                label="Argument of Perihelion (ω)",
-
+                label="w",
+                value=75.0,
                 info=(
-                    "Describes the orientation of the asteroid's orbit "
-                    "within its orbital plane, measured in degrees."
+                    "Argument of perihelion. Defines the "
+                    "orientation of the orbit, measured in degrees."
                 ),
-
-                value=180.0,
-
                 elem_classes="input-box"
             )
 
 
             ma = gr.Number(
-
-                label="Mean Anomaly (M)",
-
+                label="ma",
+                value=180.0,
                 info=(
-                    "Describes the asteroid's position along its orbit "
-                    "at a given time, measured in degrees."
+                    "Mean anomaly. Represents the asteroid's "
+                    "position along its orbit, measured in degrees."
                 ),
-
-                value=90.0,
-
                 elem_classes="input-box"
             )
 
 
     # ========================================================
-    # RANDOM VALUE BUTTON
+    # ONE BOX CONTAINING BOTH BUTTONS
     # ========================================================
 
-    random_button = gr.Button(
+    with gr.Row(elem_classes="button-box"):
 
-        "GENERATE RANDOM VALUES",
+        random_button = gr.Button(
+            "RANDOM VALUES",
+            elem_classes="pixel-button"
+        )
 
-        variant="secondary",
+        predict_button = gr.Button(
+            "PREDICT MOID",
+            elem_classes="pixel-button"
+        )
 
-        elem_classes="pixel-button random-button"
+
+    # ========================================================
+    # PREDICTION RESULT IMAGE
+    # ========================================================
+
+    gr.HTML(
+        f"""
+        <div class="section-image">
+            <img
+                src="{RESULT_DATA}"
+                alt="Prediction Result"
+            >
+        </div>
+        """
     )
 
 
-    random_button.click(
+    # ========================================================
+    # PREDICTION RESULT
+    # ========================================================
 
-        fn=generate_random_values,
+    with gr.Row(elem_classes="result-box"):
+
+        predicted_au = gr.Textbox(
+            label="Predicted MOID",
+            value="—",
+            interactive=False
+        )
+
+        predicted_km = gr.Textbox(
+            label="Distance from Earth",
+            value="—",
+            interactive=False
+        )
+
+
+    # ========================================================
+    # RANDOM BUTTON
+    # ========================================================
+
+    random_button.click(
+        fn=random_values,
 
         inputs=[],
 
         outputs=[
             H,
+            i,
             albedo,
             e,
             a,
-            i,
             om,
             w,
             ma
@@ -952,76 +1192,23 @@ with gr.Blocks(
     # PREDICT BUTTON
     # ========================================================
 
-    predict_button = gr.Button(
-
-        "PREDICT MOID",
-
-        variant="secondary",
-
-        size="lg",
-
-        elem_classes="pixel-button predict-button"
-    )
-
-
-    # ========================================================
-    # RESULT TITLE
-    # ========================================================
-
-    gr.Markdown(
-        "## Prediction Result",
-        elem_classes="section-title"
-    )
-
-
-    # ========================================================
-    # RESULTS
-    # ========================================================
-
-    with gr.Row():
-
-        output_au = gr.Textbox(
-
-            label="Predicted MOID (AU)",
-
-            interactive=False,
-
-            elem_classes="result-box"
-        )
-
-
-        output_km = gr.Textbox(
-
-            label="Predicted MOID (kilometers)",
-
-            interactive=False,
-
-            elem_classes="result-box"
-        )
-
-
-    # ========================================================
-    # PREDICTION EVENT
-    # ========================================================
-
     predict_button.click(
-
         fn=predict_moid,
 
         inputs=[
             H,
+            i,
             albedo,
             e,
             a,
-            i,
             om,
             w,
             ma
         ],
 
         outputs=[
-            output_au,
-            output_km
+            predicted_au,
+            predicted_km
         ]
     )
 
@@ -1033,19 +1220,11 @@ with gr.Blocks(
 if __name__ == "__main__":
 
     port = int(
-        os.environ.get(
-            "PORT",
-            7860
-        )
+        os.environ.get("PORT", 7860)
     )
 
     demo.launch(
-
         server_name="0.0.0.0",
-
         server_port=port,
-
-        theme=gr.themes.Soft(),
-
-        css=CSS
+        **LAUNCH_STYLE_KWARGS
     )
